@@ -1,0 +1,10 @@
+# API automation / test infra
+pytest==9.1.1
+allure-pytest==2.16.0
+addict==2.4.0
+requests==2.32.5
+psycopg2-binary==2.9.10
+
+# Mobile (iOS / Android) native app automation
+Appium-Python-Client==5.3.1
+selenium==4.36.0
