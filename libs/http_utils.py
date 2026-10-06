@@ -27,6 +27,47 @@ def ioe_api_post_request(uri, **kwargs):
     return response
 
 
+def ioe_api_get_request(uri, **kwargs):
+    response = _api_request('ioe_api', 'GET', uri, **kwargs)
+    return response
+
+
+def ioe_api_delete_request(uri, **kwargs):
+    response = _api_request('ioe_api', 'DELETE', uri, **kwargs)
+    return response
+
+
+def eg3_app_api_post_request(uri, **kwargs):
+    response = _api_request('eg3_app_api', 'POST', uri, **kwargs)
+    return response
+
+
+def eg3_app_api_get_request(uri, **kwargs):
+    response = _api_request('eg3_app_api', 'GET', uri, **kwargs)
+    return response
+
+
+def opensearch_api_post_request(uri, **kwargs):
+    """OpenSearch 走 basic auth (帳密在 variables 的 opensearch), 不是 Bearer token,
+    所以獨立一條路徑, 不走 _api_request/cems_api 那套 access_token 邏輯."""
+    config = get_config()
+    opensearch = config.opensearch
+
+    url = f"{opensearch.url}{uri}"
+    _logger.info(f'url: {url}')
+
+    kwargs.setdefault('auth', (opensearch.username, opensearch.password))
+
+    http_response = _request('POST', url, **kwargs)
+    try:
+        return Dict({
+            "status_code": http_response.status_code,
+            "response": _parse_response_body(http_response),
+        })
+    finally:
+        http_response.close()
+
+
 def _api_request(service_name, method, uri, **kwargs):
     config = get_config()
 

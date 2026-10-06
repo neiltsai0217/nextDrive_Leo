@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+allure-results/
+
+# App 安裝檔（體積大，不進版控；請放本機或另外用 artifact 管道分享）
+apk/
+*.apk
+*.ipa
+.playwright-mcp
+variables/site_stage_jp.py
+variables/site_stage_tw.py

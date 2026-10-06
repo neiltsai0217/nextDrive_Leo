@@ -1,9 +1,3 @@
-"""業務層 Postgres 查詢封裝.
-
-依 aquarius-sdet 規範, 這裡只放 SELECT 查詢; 需要變更資料 (DELETE/UPDATE/
-INSERT 等) 一律交由使用者自行執行。
-"""
-
 from libs.database_utils import postgres_query_all, postgres_query_one
 
 

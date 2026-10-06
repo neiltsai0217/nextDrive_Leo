@@ -1,0 +1,46 @@
+[
+  {
+    "name": "環境／連線問題（非產品缺陷）",
+    "matchedStatuses": ["failed", "broken"],
+    "traceRegex": "(?s).*(ConnectionError|ConnectTimeout|ReadTimeout|MaxRetryError|NewConnectionError|SSLError|RemoteDisconnected|CalledProcessError|裝置仍未穩定連線).*"
+  },
+  {
+    "name": "API 回應狀態碼異常（後端／權限／token）",
+    "matchedStatuses": ["failed"],
+    "messageRegex": "(?s)^驗證 API 回應狀態碼失敗.*"
+  },
+  {
+    "name": "前置狀態未就緒（等待上線／離線逾時、關聯前提不符）",
+    "matchedStatuses": ["failed"],
+    "messageRegex": "(?s)^(等待|確認).*失敗.*"
+  },
+  {
+    "name": "UI 元素未顯示／定位器失效",
+    "matchedStatuses": ["failed"],
+    "messageRegex": "(?s).*\\n實際結果:(找不到元素|找到 \\d+ 個元素，無法確認唯一目標|元素存在但不可見|無法取得元素狀態).*"
+  },
+  {
+    "name": "產品缺陷：元素應消失卻仍顯示",
+    "matchedStatuses": ["failed"],
+    "messageRegex": "(?s).*\\n實際結果:仍然顯示.*"
+  },
+  {
+    "name": "產品缺陷：config 下發不完整（server log）",
+    "matchedStatuses": ["failed"],
+    "messageRegex": "(?s)^驗證 server log.*失敗.*"
+  },
+  {
+    "name": "產品缺陷：閘道器本機 config.json 不符",
+    "matchedStatuses": ["failed"],
+    "messageRegex": "(?s)^驗證閘道器本機 config\\.json.*失敗.*"
+  },
+  {
+    "name": "產品缺陷：文字不符",
+    "matchedStatuses": ["failed"],
+    "messageRegex": "(?s).*\\n預期結果:.*\\n實際結果:.*"
+  },
+  {
+    "name": "測試腳本／框架錯誤",
+    "matchedStatuses": ["broken"]
+  }
+]

@@ -6,19 +6,31 @@ driver / logged_in_driver 都是 module scope, 一個 test module 共用一個 s
 """
 
 import os
+import platform
+import shutil
+import subprocess
+from datetime import datetime
+from pathlib import Path
 
+import allure
 import pytest
 from appium import webdriver
 from appium.options.android import UiAutomator2Options
 
-from libs.assert_utils import attach_screenshot
-from libs.config_utils import get_capabilities, get_config
+from libs.assert_utils import attach_page_source, attach_screenshot
+from libs.config_utils import config, get_capabilities, get_config
 from libs.device_utils import (
     dismiss_android_compat_dialog,
     ensure_android_emulator_ready,
     find_target_device_serial,
 )
+from libs.log_utils import get_logger
 from pages.sign_in_page import SignInPage
+
+_logger = get_logger(__name__)
+
+# 失敗分類規則(Allure「Categories」分頁);測試結束時複製進結果目錄
+_ALLURE_CATEGORIES_SOURCE = Path(__file__).parent / "allure-config" / "categories.json"
 
 APPIUM_SERVER_URL = os.environ.get("APPIUM_SERVER_URL", "http://127.0.0.1:4723")
 
@@ -26,6 +38,110 @@ APPIUM_SERVER_URL = os.environ.get("APPIUM_SERVER_URL", "http://127.0.0.1:4723")
 # 跳過 session.quit(), app 不會被關掉 (Appium session 會留到 newCommandTimeout
 # 逾時才自己收掉)。正常跑測試不要設, 否則 session 不會乾淨收尾。
 KEEP_APP_OPEN = os.environ.get("KEEP_APP_OPEN") == "1"
+
+# 給 pytest_runtest_makereport 失敗時撈畫面用: module scope 的 fixture chain
+# (driver -> logged_in_driver -> devices_flow) 只要中途某個 fixture setup
+# 失敗, pytest 就不會把已經成功的 driver/logged_in_driver 寫進
+# item.funcargs (實測確認過, setup 階段失敗時 item.funcargs 只有
+# pytest 內部的 fixture, 完全沒有這條 chain 上的任何東西), 所以另外用一個
+# module 層級變數記住目前的 session, 不依賴 item.funcargs。
+_current_driver_session = None
+
+
+def _allure_results_dir(pytest_config):
+    """取得 --alluredir 指定的結果目錄;沒開 allure 時回傳 None."""
+    raw_dir = pytest_config.getoption("--alluredir", None)
+    return Path(raw_dir) if raw_dir else None
+
+
+def _git_value(*args):
+    try:
+        return subprocess.check_output(
+            ["git", *args],
+            cwd=Path(__file__).parent,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except (subprocess.SubprocessError, OSError):
+        return None
+
+
+def _environment_entries(pytest_config):
+    """組出 Allure 報告「Environment」區塊要顯示的欄位(不含 token、帳密等機敏資料)."""
+    services = config.services
+    capabilities = get_capabilities()
+    app_path = capabilities.get("appium:app")
+    entries = {
+        "Site.Env": services.get("env"),
+        "Site.Territory": services.get("territory"),
+        "Site.Language": services.get("accept_language"),
+        "Api.BaseUrl": services.get("ioe_api_url"),
+        "Gateway.WifiSsid": config.wifi.get("ssid"),
+        "Device.Platform": capabilities.get("platformName"),
+        "Device.Name": capabilities.get("appium:deviceName"),
+        "Device.PlatformVersion": capabilities.get("appium:platformVersion"),
+        "App.File": os.path.basename(app_path) if app_path else None,
+        "Appium.Server": APPIUM_SERVER_URL,
+        "Pytest.MarkerExpression": pytest_config.option.markexpr or "(none)",
+        "Pytest.TestPaths": " ".join(pytest_config.args) or "(default)",
+        "Python": platform.python_version(),
+        "Platform": f"{platform.system()} {platform.release()} ({platform.machine()})",
+        "Git.Branch": _git_value("rev-parse", "--abbrev-ref", "HEAD"),
+        "Git.Commit": _git_value("rev-parse", "--short", "HEAD"),
+        "Executed.At": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z"),
+    }
+    return {key: str(value) for key, value in entries.items() if value}
+
+
+def _write_environment_properties(results_dir, pytest_config):
+    """寫出 environment.properties,讓報告標示這次跑的是哪個環境 / 語系 / 手機."""
+    lines = [f"{key}={value}" for key, value in _environment_entries(pytest_config).items()]
+    try:
+        (results_dir / "environment.properties").write_text(
+            "\n".join(lines) + "\n", encoding="ascii", errors="replace"
+        )
+    except OSError as error:
+        _logger.warning("無法寫入 environment.properties:%s", error)
+
+
+def _copy_allure_categories(results_dir):
+    """把失敗分類規則帶進結果目錄,報告才會有 Categories 分頁."""
+    if not _ALLURE_CATEGORIES_SOURCE.exists():
+        _logger.warning("找不到 %s,略過失敗分類設定。", _ALLURE_CATEGORIES_SOURCE)
+        return
+    try:
+        shutil.copy(_ALLURE_CATEGORIES_SOURCE, results_dir / "categories.json")
+    except OSError as error:
+        _logger.warning("無法複製 categories.json:%s", error)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """
+    測試結束後補齊 Allure 報告的中繼資料(Environment、Categories).
+
+    在 sessionfinish 而非 sessionstart 執行:--clean-alluredir 會在 session 開始時清空結果目錄.
+    """
+    results_dir = _allure_results_dir(session.config)
+    if results_dir is None or not results_dir.exists():
+        return
+    _write_environment_properties(results_dir, session.config)
+    _copy_allure_categories(results_dir)
+
+
+@pytest.fixture(autouse=True)
+def _label_allure_environment():
+    """
+    在 Allure 報告標上執行環境與語系:parent_suite 讓報告依環境分組,
+    parameter 會納入 historyId,不同環境 / 語系的同名 test 才不會被合併成「重試」.
+    """
+    env = config.services.get("env")
+    language = config.services.get("accept_language")
+    allure.dynamic.parent_suite(f"環境:{env}({language})")
+    allure.dynamic.parameter("環境", env)
+    allure.dynamic.parameter("語系", language)
+    allure.dynamic.tag(f"環境:{env}")
+    allure.dynamic.tag(f"語系:{language}")
+    yield
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -70,8 +186,13 @@ def driver(ensure_device_ready):
     # 這裡不再額外 activate_app, 否則同一個 module 內會多開關 app 一輪。
     session = webdriver.Remote(APPIUM_SERVER_URL, options=options)
 
+    global _current_driver_session
+    _current_driver_session = session
+
     dismiss_android_compat_dialog(session)
     yield session
+
+    _current_driver_session = None
 
     if KEEP_APP_OPEN:
         return
@@ -116,9 +237,17 @@ def logged_in_driver(driver):
 def pytest_runtest_makereport(item, call):
     outcome = yield
     report = outcome.get_result()
-    if report.when != "call" or not report.failed:
+    # 不限制 report.when: setup 階段的 fixture 出錯 (例如 module fixture 裡的
+    # connect_device() 失敗) 一樣要留下截圖跟 page source, 不然排錯時只有
+    # exception 文字, 沒有畫面可以對照。
+    if not report.failed:
         return
 
-    session = item.funcargs.get("driver") or item.funcargs.get("logged_in_driver")
+    session = (
+        item.funcargs.get("driver")
+        or item.funcargs.get("logged_in_driver")
+        or _current_driver_session
+    )
     if session is not None:
-        attach_screenshot(session, "失敗畫面截圖")
+        attach_screenshot(session, "測試失敗畫面")
+        attach_page_source(session, "測試失敗畫面 page source")

@@ -54,6 +54,35 @@ class BasePage:
             EC.visibility_of_element_located(locator)
         )
 
+    def press_back(self) -> None:
+        """按系統返回鍵, 不依賴畫面上任何返回鍵 locator.
+
+        Toolbar 的 up-navigation 按鈕常常用 content-desc 跟著畫面標題走
+        (例如 AdvancedDevicesPage), 標題一變 (例如列表被清空) locator 就跟著
+        失效, 但那個畫面實測仍是同一個 Activity, 只是標題變了, 並不是真的
+        導覽走了。用系統返回鍵取代點擊特定 UI 元素, 才不會被這種文字巧合
+        影響。
+        """
+        self.driver.back()
+
+    def _settings_menu_item_locator(self, label: str) -> tuple:
+        """App 內多處共用的「設定」bottom sheet (閘道器設定/子裝置設定都是這種
+        結構): 選項共用 title_textView 這個 resource-id, 只能用文字區分。
+        """
+        return (
+            AppiumBy.ANDROID_UIAUTOMATOR,
+            f'new UiSelector().resourceId("{_PACKAGE}:id/title_textView").text("{label}")',
+        )
+
+    def tap_settings_menu_item(self, label: str, timeout: int = 10) -> None:
+        self._tap(self._settings_menu_item_locator(label), timeout)
+
+    def tap_confirm_dialog_main_action(self, timeout: int = 10) -> None:
+        """確認彈窗的主要按鈕 (例如「移除」), 跟其他 App 內部彈窗共用同一顆
+        arch_component_dialog_main_action_button。
+        """
+        self._tap(self._ERROR_DIALOG_OK_BUTTON, timeout)
+
     def dismiss_error_dialog_if_shown(self, timeout: int = 3) -> bool:
         """關閉 App 通用的錯誤彈窗 (arch_component_dialog_*).
 

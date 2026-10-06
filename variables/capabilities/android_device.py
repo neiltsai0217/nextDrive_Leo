@@ -19,7 +19,7 @@ capabilities = {
     "appium:automationName": "UiAutomator2",
 
     "appium:deviceName": "Pixel 8a",
-    "appium:udid": "41051JEKB26509",
+    "appium:udid": "192.168.8.125:5555",
 
     "appium:platformVersion": "16",
 
